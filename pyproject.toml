@@ -1,0 +1,25 @@
+[project]
+name = "tagalog-scraper"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Hugh Kaznowski",email = "hugh@rapidrecast.io"}
+]
+readme = "README.md"
+#requires-python = ">=3.12"
+python = ">=3.12,<3.13"
+dependencies = [
+    "scrapy (>=2.12.0,<3.0.0)",
+    "spacy (>=3.8.5,<4.0.0)"
+]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+
+[tool.poetry]
+packages = [{include = "tagalog_scraper", from = "src"}]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
