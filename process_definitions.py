@@ -23,39 +23,65 @@ type_map = {
     "prep.": "preposition",
     "conj.": "conjunction",
     "pl.": "plural",
-    "pron.": "pronoun"
+    "pron.": "pronoun",
+    "interrog.": "interrogative"
+}
+
+context_map = {
+    "comp.": "computing",
+    "math.": "mathematics",
+    "mat.": "mathematics"
 }
 
 def extract_type_and_definition(entry):
     tagalog = entry["tagalog"].strip()
     raw = entry["english"].strip()
+    base_word = re.sub(r"\s*\(.+\)", "", tagalog).strip()
 
-    # Remove the tagalog word from the start of the definition if it's duplicated
-    if raw.lower().startswith(tagalog.lower()):
-        raw = raw[len(tagalog):].strip()
+    # Remove the tagalog word at the beginning, even with trailing punctuation
+    cleaned = re.sub(rf"^{re.escape(base_word)}[!?.,]?\s*", "", raw, flags=re.IGNORECASE)
 
-    # Match the first known type abbreviation (e.g., adj., n., v., etc.)
-    type_match = re.match(r'^([a-z]{1,6}\.)', raw)
-    type_abbr = type_match.group(1) if type_match else None
-    full_type = type_map.get(type_abbr, "unknown") if type_abbr else "unknown"
+    # Remove parenthetical inflections
+    cleaned = re.sub(r"^\([^)]*\)\s*", "", cleaned)
 
-    # Remove type from definition
-    definition = raw
-    if type_abbr:
-        definition = raw[len(type_abbr):].strip()
+    # Remove prefix words not matching tagalog (like "sama", "ubos", etc.)
+    # Only strip first word if it's not a tag
+    maybe_first_word = cleaned.split(" ", 1)[0].lower()
+    if maybe_first_word not in type_map and maybe_first_word not in context_map:
+        cleaned = re.sub(rf"^{re.escape(maybe_first_word)}\s+", "", cleaned)
 
-    # Clean punctuation from definition
-    definition = definition.strip(" :;.")
 
-    # Clean the tagalog word from embedded variations, like: abangan (inaabangan...)
-    base_word = re.sub(r"\s*\(.+\)", "", tagalog)
+    # Extract all possible POS/type/context indicators
+    all_tags = re.findall(r"\b([a-z]{2,10}\.)", cleaned.lower())
 
-    return {
+    # Try to find a main part of speech (noun, verb, adj, etc.)
+    main_type = None
+    context = None
+    for tag in all_tags:
+        if tag in type_map:
+            main_type = type_map[tag]
+            break
+        elif tag in context_map:
+            context = context_map[tag]
+
+    # Remove the matched tag(s) from the start
+    for tag in all_tags:
+        cleaned = re.sub(rf"^{tag}\s*", "", cleaned, flags=re.IGNORECASE)
+
+    # Final cleanup
+    definition = cleaned.strip(" :;.")
+
+    result = {
         "tagalog": base_word,
-        "type": full_type,
         "definition": definition,
-        "raw_definition": entry["english"]
+        "raw_definition": entry["english"],
+        "type": main_type or "unknown"
     }
+
+    if context:
+        result["context"] = context
+
+    return result
 
 # Process entries
 processed = [extract_type_and_definition(entry) for entry in raw_data]
