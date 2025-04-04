@@ -9,11 +9,6 @@ nlp = spacy.load("en_core_web_sm")
 input_path = Path("output.json")
 output_path = Path("processed.json")
 
-# Load original JSON
-with input_path.open("r", encoding="utf-8") as f:
-    raw_data = json.load(f)
-
-# Map abbreviation to full part-of-speech
 type_map = {
     "n.": "noun",
     "v.": "verb",
@@ -33,49 +28,53 @@ context_map = {
     "mat.": "mathematics"
 }
 
+
+def detect_type_with_spacy(def_text: str) -> str:
+    doc = nlp(def_text)
+    for token in doc:
+        if token.pos_ in {"NOUN", "VERB", "ADJ", "ADV", "INTJ"}:
+            return token.pos_.lower()
+    return "unknown"
+
 def extract_type_and_definition(entry):
     tagalog = entry["tagalog"].strip()
     raw = entry["english"].strip()
+
+    # Remove variant info from tagalog (e.g., abain (inaaba, ...))
     base_word = re.sub(r"\s*\(.+\)", "", tagalog).strip()
 
-    # Remove the tagalog word at the beginning, even with trailing punctuation
+    # Remove tagalog word at start of definition
     cleaned = re.sub(rf"^{re.escape(base_word)}[!?.,]?\s*", "", raw, flags=re.IGNORECASE)
 
-    # Remove parenthetical inflections
+    # Remove parenthetical inflections like (inaaba, inaba, ...)
     cleaned = re.sub(r"^\([^)]*\)\s*", "", cleaned)
 
-    # Remove prefix words not matching tagalog (like "sama", "ubos", etc.)
-    # Only strip first word if it's not a tag
-    maybe_first_word = cleaned.split(" ", 1)[0].lower()
-    if maybe_first_word not in type_map and maybe_first_word not in context_map:
-        cleaned = re.sub(rf"^{re.escape(maybe_first_word)}\s+", "", cleaned)
+    # Extract all tags like n., v., adj., etc.
+    tag_matches = re.findall(r"\b([a-z]{1,10})\.", cleaned.lower())
 
-
-    # Extract all possible POS/type/context indicators
-    all_tags = re.findall(r"\b([a-z]{2,10}\.)", cleaned.lower())
-
-    # Try to find a main part of speech (noun, verb, adj, etc.)
     main_type = None
     context = None
-    for tag in all_tags:
-        if tag in type_map:
-            main_type = type_map[tag]
-            break
-        elif tag in context_map:
-            context = context_map[tag]
+    for tag in tag_matches:
+        if f"{tag}." in type_map:
+            main_type = type_map[f"{tag}."]
+        elif f"{tag}." in context_map:
+            context = context_map[f"{tag}."]
 
-    # Remove the matched tag(s) from the start
-    for tag in all_tags:
-        cleaned = re.sub(rf"^{tag}\s*", "", cleaned, flags=re.IGNORECASE)
+    # Remove all tag tokens (e.g., "v.,", "n.", "adj.,", etc.) and ", inf." or ", pl."
+    cleaned = re.sub(r"^((\([^)]*\)\s*)?([a-z]{1,10}\.\s*,?\s*)+)", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^,\s*(inf\.|pl\.|mat\.|comp\.)\s*", "", cleaned, flags=re.IGNORECASE)
 
-    # Final cleanup
-    definition = cleaned.strip(" :;.")
+    definition = cleaned.strip(" ,:;.")
+
+    # Use spaCy to guess type if none found
+    if not main_type:
+        main_type = detect_type_with_spacy(definition)
 
     result = {
         "tagalog": base_word,
         "definition": definition,
-        "raw_definition": entry["english"],
-        "type": main_type or "unknown"
+        "raw_definition": raw,
+        "type": main_type
     }
 
     if context:
@@ -84,9 +83,11 @@ def extract_type_and_definition(entry):
     return result
 
 # Process entries
+with input_path.open("r", encoding="utf-8") as f:
+    raw_data = json.load(f)
+
 processed = [extract_type_and_definition(entry) for entry in raw_data]
 
-# Write to file
 with output_path.open("w", encoding="utf-8") as f:
     json.dump(processed, f, ensure_ascii=False, indent=2)
 
